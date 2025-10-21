@@ -1,0 +1,8 @@
+# Example hosts file for EZNet
+# Lines starting with # are comments and will be ignored
+
+google.com
+github.com
+stackoverflow.com
+8.8.8.8
+1.1.1.1
