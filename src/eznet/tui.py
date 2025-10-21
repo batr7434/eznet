@@ -186,6 +186,32 @@ class EZNetTUI(App):
         color: #ffffff;
     }
     
+    /* Command input container */
+    #command-container {
+        height: 3;
+        background: #21262d;
+        border-top: solid #30363d;
+        border-bottom: solid #30363d; 
+    }
+    
+    .k9s-command-label {
+        color: #58a6ff;
+        text-style: bold;
+        height: 1;
+        padding: 0 1;
+    }
+    
+    .k9s-command-input {
+        background: #0d1117;
+        color: #c9d1d9;
+        border: solid #30363d;
+        height: 1;
+    }
+    
+    .k9s-command-input:focus {
+        border: solid #58a6ff;
+    }
+    
     /* Footer styling like k9s */
     #footer-container {
         height: 2;
@@ -263,9 +289,7 @@ class EZNetTUI(App):
         self.hosts: Dict[str, HostResult] = {}
         self.selected_row = 0
         self.monitor_timer: Optional[Timer] = None
-        self.command_input: Optional[Input] = None
-        self.command_mode_active = False
-        self.command_buffer = ""
+        # Command input is now always visible
         
         # Initialize network checkers
         self.dns_checker = DNSChecker()
@@ -285,7 +309,6 @@ class EZNetTUI(App):
         # k9s-style context bar at top
         yield Container(
             Static("[0] hosts", id="context-bar", classes="k9s-header"),
-            Static("", id="filter-bar", classes="k9s-filter"),
             id="header-container"
         )
         
@@ -295,10 +318,17 @@ class EZNetTUI(App):
             id="main-container"
         )
         
+        # k9s-style command input (always visible)
+        yield Container(
+            Static("Command:", classes="k9s-command-label"),
+            Input(placeholder="Type command (e.g., google.com:443)", id="command-input", classes="k9s-command-input"),
+            id="command-container"
+        )
+        
         # k9s-style status and help bar at bottom
         yield Container(
             Static("", id="status-bar", classes="k9s-status"),
-            Static("<:> Command <d> Describe <r> Refresh <q> Quit", id="help-bar", classes="k9s-help"),
+            Static("<Enter> Execute <d> Describe <r> Refresh <q> Quit", id="help-bar", classes="k9s-help"),
             id="footer-container"
         )
     
@@ -609,50 +639,21 @@ class EZNetTUI(App):
             asyncio.create_task(self._check_all_hosts())
     
     def action_command_mode(self) -> None:
-        """Enter command mode (like k9s - direct typing)"""
-        # In k9s style, we start collecting input directly
-        self.command_mode_active = True
-        self.command_buffer = ":"
-        
-        # Update filter bar to show command input
-        filter_bar = self.query_one("#filter-bar", Static)
-        filter_bar.update(self.command_buffer)
+        """Enter command mode (focus on command input)"""
+        # Focus on the command input field
+        command_input = self.query_one("#command-input", Input)
+        command_input.focus()
     
-    def on_key(self, event) -> None:
-        """Handle key events for k9s-style command input."""
-        if self.command_mode_active:
-            if event.key == "enter":
-                # Process command
-                command = self.command_buffer[1:]  # Remove : prefix
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle command input submission."""
+        if event.input.id == "command-input":
+            command = event.value.strip()
+            if command:
                 self._process_command(command)
-                self._exit_command_mode()
-            elif event.key == "escape":
-                # Cancel command
-                self._exit_command_mode()
-            elif event.key == "backspace":
-                # Handle backspace
-                if len(self.command_buffer) > 1:
-                    self.command_buffer = self.command_buffer[:-1]
-                    filter_bar = self.query_one("#filter-bar", Static)
-                    filter_bar.update(self.command_buffer)
-                else:
-                    self._exit_command_mode()
-                    return
-            elif event.character and event.character.isprintable():
-                # Add character to buffer
-                self.command_buffer += event.character
-                filter_bar = self.query_one("#filter-bar", Static)
-                filter_bar.update(self.command_buffer)
-        else:
-            # Normal key handling - let the bindings work
-            pass
+                # Clear the input field
+                event.input.value = ""
     
-    def _exit_command_mode(self) -> None:
-        """Exit command mode and clear filter bar."""
-        self.command_mode_active = False
-        self.command_buffer = ""
-        filter_bar = self.query_one("#filter-bar", Static)
-        filter_bar.update("")
+
     
     def _process_command(self, command: str) -> None:
         """Process the entered command."""
