@@ -35,29 +35,35 @@ class ICMPChecker:
         Returns:
             Dictionary containing ping results
         """
-        # Try different ping methods in order of preference
-        methods = [
-            self._ping_with_system_command,
-            self._ping_with_raw_socket  # Requires root privileges
-        ]
-        
-        last_error = None
-        for method in methods:
-            try:
-                result = await method(host)
-                if result.get("success"):
-                    return result
-                last_error = result.get("error", "Unknown error")
-            except Exception as e:
-                last_error = str(e)
-                continue
-        
-        return {
-            "success": False,
-            "host": host,
-            "error": last_error or "All ping methods failed",
-            "method": "none"
-        }
+        # Try system ping command first
+        try:
+            result = await self._ping_with_system_command(host)
+            if result.get("success"):
+                return result
+            
+            # If system ping failed due to ICMP blocking, don't try raw socket
+            if "ICMP ping blocked" in result.get("error", ""):
+                return result
+            
+            # Only try raw socket for other types of failures (and if running as root)
+            if os.geteuid() == 0:
+                try:
+                    raw_result = await self._ping_with_raw_socket(host)
+                    if raw_result.get("success"):
+                        return raw_result
+                except Exception:
+                    pass
+            
+            # Return the system ping result with a better error message
+            return result
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "host": host,
+                "error": f"Ping failed: {str(e)}",
+                "method": "none"
+            }
     
     async def _ping_with_system_command(self, host: str) -> Dict[str, Any]:
         """
@@ -120,6 +126,18 @@ class ICMPChecker:
                 }
             else:
                 error_output = stderr.decode('utf-8', errors='ignore')
+                
+                # Check if it's a common case of packet loss (ICMP blocked)
+                if "100% packet loss" in output or "0 packets received" in output:
+                    return {
+                        "success": False,
+                        "host": host,
+                        "error": "ICMP ping blocked (firewall/security policy)",
+                        "method": "system_command",
+                        "response_time_ms": response_time,
+                        "hint": "Host may still be reachable via TCP/HTTP"
+                    }
+                
                 return {
                     "success": False,
                     "host": host,
@@ -153,8 +171,9 @@ class ICMPChecker:
             return {
                 "success": False,
                 "host": host,
-                "error": "Raw socket ping requires root privileges",
-                "method": "raw_socket"
+                "error": "Ping unavailable (try with 'sudo' for raw socket ping)",
+                "method": "raw_socket",
+                "hint": "Most hosts block ICMP or require elevated privileges"
             }
         
         try:
@@ -291,7 +310,7 @@ class ICMPChecker:
                 except ValueError:
                     continue
         
-        return None
+        return 0.0
     
     async def continuous_ping(self, host: str, count: int = 4, interval: float = 1.0) -> Dict[str, Any]:
         """

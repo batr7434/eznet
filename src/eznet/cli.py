@@ -309,6 +309,11 @@ def display_port_scan_results(result: EZNetResult) -> None:
         icmp_table.add_row(result.host, status, response_time)
         
         console.print(icmp_table)
+        
+        # Show hint if ICMP is blocked
+        if not icmp_data.get("success") and icmp_data.get("hint"):
+            console.print(f"[dim italic]💡 {icmp_data.get('hint')}[/dim italic]")
+        
         console.print()
     
     # Summary
@@ -630,6 +635,11 @@ def display_results(result: EZNetResult) -> None:
         icmp_table.add_row(result.host, status, response_time)
         
         console.print(icmp_table)
+        
+        # Show hint if ICMP is blocked
+        if not icmp_data.get("success") and icmp_data.get("hint"):
+            console.print(f"[dim italic]💡 {icmp_data.get('hint')}[/dim italic]")
+        
         console.print()
     
     # Summary
