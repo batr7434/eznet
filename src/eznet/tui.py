@@ -1,36 +1,31 @@
 #!/usr/bin/env python3
 """
-EZNet TUI - Interactive Terminal User Interface for network testing
-Inspired by k9s for Kubernetes
+EZNet TUI - Terminal User Interface for network testing.
+
+A k9s-inspired interactive dashboard for network monitoring and testing.
 """
 
 import asyncio
 import time
-import os
-import sys
-from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 
-try:
-    from textual.app import App, ComposeResult
-    from textual.containers import Container, Horizontal, Vertical
-    from textual.widgets import Header, Footer, Static, DataTable, Log
-    from textual.binding import Binding
-    from textual.reactive import reactive
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.text import Text
-    HAS_TEXTUAL = True
-except ImportError:
-    HAS_TEXTUAL = False
-
+from textual.app import App, ComposeResult
+from textual.widgets import (
+    Header, Footer, DataTable, Static, Label, TabbedContent, 
+    TabPane, ProgressBar, Log, Tree, Input
+)
+from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.screen import Screen, ModalScreen
+from textual.binding import Binding
+from textual.reactive import reactive, var
+from textual import on, work
+from textual.timer import Timer
 from rich.console import Console
 from rich.table import Table
-from rich.panel import Panel
-from rich.live import Live
-from rich.layout import Layout
+from rich.text import Text
+from rich.syntax import Syntax
 
 from .dns_check import DNSChecker
 from .tcp_check import TCPChecker
@@ -38,260 +33,480 @@ from .http_check import HTTPChecker
 from .ssl_check import SSLChecker
 from .icmp_check import ICMPChecker
 
-
 @dataclass
-class HostStatus:
-    """Container for host monitoring status"""
+class HostResult:
+    """Represents the result of host monitoring."""
     host: str
     port: int = 443
+    status: str = "⏳ CHECKING"
+    dns_status: str = "⏳"
+    tcp_status: str = "⏳"
+    http_status: str = "⏳"
+    ssl_status: str = "⏳"
+    ssl_grade: str = ""
+    response_time: int = 0
     last_check: Optional[datetime] = None
-    dns_status: str = "❓"
-    tcp_status: str = "❓"
-    http_status: str = "❓"
-    ssl_status: str = "❓"
-    icmp_status: str = "❓"
-    response_time: Optional[float] = None
-    ssl_grade: str = "?"
-    uptime_percentage: float = 0.0
-    error_message: str = ""
-    check_count: int = 0
-    success_count: int = 0
-    history: List[Dict[str, Any]] = field(default_factory=list)
-
-
-class SimpleTUI:
-    """Simple TUI implementation using Rich Live Display"""
+    uptime: float = 100.0
+    total_checks: int = 0
+    successful_checks: int = 0
+    errors: List[str] = field(default_factory=list)
     
-    def __init__(self, hosts: Optional[List[str]] = None):
-        self.console = Console()
-        self.hosts: Dict[str, HostStatus] = {}
+    # Detailed results for inspection
+    dns_result: Optional[Dict] = None
+    tcp_result: Optional[Dict] = None
+    http_result: Optional[Dict] = None
+    ssl_result: Optional[Dict] = None
+    icmp_result: Optional[Dict] = None
+
+
+class SSLDetailScreen(ModalScreen[str]):
+    """Modal screen showing SSL certificate details (like 'd' in k9s)."""
+    
+    BINDINGS = [
+        Binding("escape", "cancel", "Close"),
+        Binding("q", "cancel", "Close"),
+    ]
+    
+    def __init__(self, host_result: HostResult) -> None:
+        super().__init__()
+        self.host_result = host_result
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="ssl-detail-container"):
+            yield Static(f"SSL Certificate Details: {self.host_result.host}:{self.host_result.port}", 
+                        classes="ssl-detail-title")
+            
+            if self.host_result.ssl_result and self.host_result.ssl_result.get('success'):
+                ssl_data = self.host_result.ssl_result
+                
+                # Create detailed SSL info display
+                ssl_info = []
+                ssl_info.append(f"Subject: {ssl_data.get('subject', 'Unknown')}")
+                ssl_info.append(f"Issuer: {ssl_data.get('issuer', 'Unknown')}")
+                ssl_info.append(f"Valid Until: {ssl_data.get('valid_until', 'Unknown')}")
+                ssl_info.append(f"Security Grade: {ssl_data.get('security_grade', 'Unknown')}")
+                ssl_info.append(f"Days Until Expiry: {ssl_data.get('days_until_expiry', 'Unknown')}")
+                
+                if ssl_data.get('detailed_certificate'):
+                    cert = ssl_data['detailed_certificate']
+                    ssl_info.append("\n--- Certificate Details ---")
+                    ssl_info.append(f"Version: {cert.get('version', 'Unknown')}")
+                    ssl_info.append(f"Serial Number: {cert.get('serial_number', 'Unknown')}")
+                    ssl_info.append(f"Signature Algorithm: {cert.get('signature_algorithm', 'Unknown')}")
+                
+                yield Static("\n".join(ssl_info), classes="ssl-detail-content")
+            else:
+                yield Static("SSL check failed or no SSL data available", classes="ssl-detail-error")
+            
+            yield Static("\n[ESC] Close | [Q] Quit", classes="ssl-detail-help")
+    
+    def action_cancel(self) -> None:
+        self.dismiss("closed")
+
+
+class EZNetTUI(App):
+    """
+    EZNet TUI - k9s-inspired network testing dashboard.
+    
+    Navigation:
+    - j/k or arrow keys: Navigate hosts
+    - d: Show SSL certificate details  
+    - r: Refresh current host
+    - R: Refresh all hosts
+    - m: Toggle monitoring mode
+    - :: Command mode (add hosts)
+    - q: Quit
+    """
+    
+    TITLE = "EZNet TUI"
+    SUB_TITLE = "Network Testing Dashboard"
+    CSS_PATH = None
+    
+    BINDINGS = [
+        Binding("q", "quit", "Quit", priority=True),
+        Binding("r", "refresh_current", "Refresh"),
+        Binding("shift+r", "refresh_all", "Refresh All"),
+        Binding("d", "show_ssl_details", "SSL Details"),
+        Binding("m", "toggle_monitoring", "Monitor"),
+        Binding("colon", "command_mode", "Command", show=False),
+        Binding("?", "help", "Help"),
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+    ]
+    
+    # Reactive variables
+    monitoring_active = reactive(False)
+    current_host = reactive("")
+    refresh_interval = reactive(5.0)
+    
+    def __init__(self, initial_hosts: Optional[List[str]] = None):
+        super().__init__()
+        self.hosts: Dict[str, HostResult] = {}
+        self.selected_row = 0
+        self.monitor_timer: Optional[Timer] = None
+        self.command_input: Optional[Input] = None
+        self.command_mode_active = False
         
-        # Initialize hosts
-        initial = hosts or ["google.com", "github.com", "stackoverflow.com"]
-        for host in initial:
-            self.hosts[host] = HostStatus(host=host)
-        
-        # Network checkers
+        # Initialize network checkers
         self.dns_checker = DNSChecker()
         self.tcp_checker = TCPChecker()
         self.http_checker = HTTPChecker()
         self.ssl_checker = SSLChecker()
         self.icmp_checker = ICMPChecker()
         
-        # Monitoring state
-        self.monitoring_active = False
-        self.refresh_rate = 5.0
-        
-    def create_layout(self) -> Layout:
-        """Create the main layout"""
-        layout = Layout()
-        
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="main"),
-            Layout(name="footer", size=3)
-        )
-        
-        # Header
-        layout["header"].update(
-            Panel(
-                "[bold blue]EZNet TUI - Network Testing Dashboard[/bold blue]\n"
-                f"Monitoring {len(self.hosts)} hosts | Press Ctrl+C to quit",
-                style="bold"
-            )
-        )
-        
-        # Footer with commands
-        layout["footer"].update(
-            Panel(
-                "[bold]Commands:[/bold] [r]efresh [m]onitor [q]uit | "
-                "[bold]Like k9s for network testing![/bold] 🚀",
-                style="dim"
-            )
-        )
-        
-        return layout
+        # Only add initial hosts if provided (for command line usage)
+        if initial_hosts:
+            for host in initial_hosts:
+                host_key = f"{host}:443"
+                self.hosts[host_key] = HostResult(host=host, port=443)
     
-    def create_hosts_table(self) -> Table:
-        """Create the main hosts table"""
-        table = Table(
-            title="🌐 Network Hosts Status",
-            show_header=True,
-            header_style="bold magenta",
-            box=None
+    def compose(self) -> ComposeResult:
+        """Create the main UI layout."""
+        yield Header()
+        
+        with TabbedContent():
+            with TabPane("Hosts", id="hosts-tab"):
+                yield DataTable(id="hosts-table", cursor_type="row")
+                
+            with TabPane("SSL Details", id="ssl-tab"):
+                yield Static("Select a host and press 'd' to view SSL details", id="ssl-content")
+                
+            with TabPane("Logs", id="logs-tab"):
+                yield Log(id="main-log")
+        
+        yield Footer()
+    
+    def on_mount(self) -> None:
+        """Initialize the UI when mounted."""
+        # Setup the hosts table
+        table = self.query_one("#hosts-table", DataTable)
+        table.add_columns(
+            "Host", "Port", "Status", "DNS", "TCP", "HTTP", "SSL", "Grade", 
+            "Response", "Uptime", "Last Check"
         )
         
-        table.add_column("Host", style="cyan", width=20)
-        table.add_column("Port", justify="center", width=6)
-        table.add_column("DNS", justify="center", width=5)
-        table.add_column("TCP", justify="center", width=5)
-        table.add_column("HTTP", justify="center", width=5)
-        table.add_column("SSL", justify="center", width=5)
-        table.add_column("ICMP", justify="center", width=5)
-        table.add_column("Response", justify="right", width=10)
-        table.add_column("Uptime", justify="right", width=8)
-        table.add_column("Last Check", style="dim", width=10)
+        # Add initial rows
+        for host_result in self.hosts.values():
+            self._add_host_row(table, host_result)
         
-        for host_status in self.hosts.values():
-            last_check = host_status.last_check.strftime("%H:%M:%S") if host_status.last_check else "Never"
-            response_time = f"{host_status.response_time:.0f}ms" if host_status.response_time else "-"
-            uptime = f"{host_status.uptime_percentage:.1f}%"
-            
-            # Color coding for uptime
-            uptime_style = "green" if host_status.uptime_percentage >= 95 else "yellow" if host_status.uptime_percentage >= 80 else "red"
-            
-            table.add_row(
-                host_status.host,
-                str(host_status.port),
-                host_status.dns_status,
-                host_status.tcp_status,
-                host_status.http_status,
-                host_status.ssl_status,
-                host_status.icmp_status,
-                response_time,
-                f"[{uptime_style}]{uptime}[/{uptime_style}]",
-                last_check
-            )
+        # Initial check
+        self.call_after_refresh(self._check_all_hosts)
         
-        return table
+        # Log startup
+        log = self.query_one("#main-log", Log)
+        log.write_line("🚀 EZNet TUI started")
+        log.write_line(f"📊 Monitoring {len(self.hosts)} hosts")
     
-    async def check_single_host(self, hostname: str) -> None:
-        """Check a single host and update its status"""
-        host_status = self.hosts[hostname]
-        start_time = time.time()
+    def _add_host_row(self, table: DataTable, host_result: HostResult) -> None:
+        """Add a host row to the table."""
+        last_check = host_result.last_check.strftime("%H:%M:%S") if host_result.last_check else "Never"
+        response_time = f"{host_result.response_time}ms" if host_result.response_time > 0 else "-"
+        uptime_str = f"{host_result.uptime:.1f}%"
+        
+        table.add_row(
+            host_result.host,
+            str(host_result.port),
+            host_result.status,
+            host_result.dns_status,
+            host_result.tcp_status,
+            host_result.http_status,
+            host_result.ssl_status,
+            host_result.ssl_grade,
+            response_time,
+            uptime_str,
+            last_check,
+            key=f"{host_result.host}:{host_result.port}"
+        )
+    
+    def _update_host_row(self, table: DataTable, host_result: HostResult) -> None:
+        """Update an existing host row."""
+        row_key = f"{host_result.host}:{host_result.port}"
         
         try:
-            # Perform all checks
-            dns_result = await self.dns_checker.check(hostname)
-            tcp_result = await self.tcp_checker.check(hostname, host_status.port)
-            http_result = await self.http_checker.check(hostname, host_status.port)
-            ssl_result = await self.ssl_checker.check(hostname, host_status.port, detailed=True)
-            icmp_result = await self.icmp_checker.check(hostname)
+            last_check = host_result.last_check.strftime("%H:%M:%S") if host_result.last_check else "Never"
+            response_time = f"{host_result.response_time}ms" if host_result.response_time > 0 else "-"
+            uptime_str = f"{host_result.uptime:.1f}%"
             
-            # Update status
-            host_status.dns_status = "✅" if dns_result.get("success") else "❌"
-            host_status.tcp_status = "✅" if tcp_result.get("success") else "❌"
-            host_status.http_status = "✅" if http_result.get("success") else "❌"
-            host_status.ssl_status = "✅" if ssl_result.get("success") else "❌"
-            host_status.icmp_status = "✅" if icmp_result.get("success") else "❌"
+            # Update the row
+            table.update_cell(row_key, "Status", host_result.status)
+            table.update_cell(row_key, "DNS", host_result.dns_status)
+            table.update_cell(row_key, "TCP", host_result.tcp_status)
+            table.update_cell(row_key, "HTTP", host_result.http_status)
+            table.update_cell(row_key, "SSL", host_result.ssl_status)
+            table.update_cell(row_key, "Grade", host_result.ssl_grade)
+            table.update_cell(row_key, "Response", response_time)
+            table.update_cell(row_key, "Uptime", uptime_str)
+            table.update_cell(row_key, "Last Check", last_check)
             
-            # Calculate response time
-            host_status.response_time = (time.time() - start_time) * 1000
-            host_status.last_check = datetime.now()
-            
-            # Update SSL grade
-            if ssl_result.get("success"):
-                host_status.ssl_grade = ssl_result.get("security_grade", "?")
-            
-            # Update statistics
-            host_status.check_count += 1
-            if dns_result.get("success") and tcp_result.get("success"):
-                host_status.success_count += 1
-            
-            host_status.uptime_percentage = (host_status.success_count / host_status.check_count) * 100 if host_status.check_count > 0 else 0
-                
         except Exception as e:
-            host_status.error_message = str(e)
-            host_status.dns_status = "❌"
-            host_status.tcp_status = "❌"
-            host_status.http_status = "❌"
-            host_status.ssl_status = "❌"
-            host_status.icmp_status = "❌"
-            host_status.last_check = datetime.now()
+            # Row might not exist, add it
+            self._add_host_row(table, host_result)
     
-    async def check_all_hosts(self) -> None:
-        """Check all hosts asynchronously"""
-        tasks = []
-        for host in self.hosts.keys():
-            tasks.append(self.check_single_host(host))
+    async def _check_single_host_internal(self, host_key: str) -> None:
+        """Internal method to check a single host and update its status."""
+        if host_key not in self.hosts:
+            return
         
-        await asyncio.gather(*tasks, return_exceptions=True)
-    
-    async def run_live_monitoring(self) -> None:
-        """Run the live monitoring dashboard"""
-        layout = self.create_layout()
+        host_result = self.hosts[host_key]
+        host_result.status = "⏳ CHECKING"
         
-        with Live(layout, console=self.console, refresh_per_second=0.5, screen=True) as live:
-            self.console.print("\n[bold green]🚀 Starting EZNet TUI...[/bold green]")
-            self.console.print("[dim]Performing initial checks...[/dim]\n")
+        start_time = time.time()
+        
+        # Log the check
+        log = self.query_one("#main-log", Log)
+        log.write_line(f"🔍 Checking {host_result.host}:{host_result.port}")
+        
+        try:
+            # Perform all checks concurrently
+            tasks = [
+                self.dns_checker.check(host_result.host),
+                self.tcp_checker.check(host_result.host, host_result.port),
+                self.http_checker.check(host_result.host, host_result.port),
+                self.ssl_checker.check(host_result.host, host_result.port, detailed=True),
+                self.icmp_checker.check(host_result.host)
+            ]
             
-            try:
-                while True:
-                    # Check all hosts
-                    await self.check_all_hosts()
-                    
-                    # Update the main content with hosts table
-                    layout["main"].update(self.create_hosts_table())
-                    
-                    # Update header with current time
-                    layout["header"].update(
-                        Panel(
-                            f"[bold blue]EZNet TUI - Network Testing Dashboard[/bold blue]\n"
-                            f"Monitoring {len(self.hosts)} hosts | {datetime.now().strftime('%H:%M:%S')} | Press Ctrl+C to quit",
-                            style="bold"
-                        )
-                    )
-                    
-                    # Wait for next refresh
-                    await asyncio.sleep(self.refresh_rate)
-                    
-            except KeyboardInterrupt:
-                self.console.print("\n[bold yellow]👋 Monitoring stopped. Goodbye![/bold yellow]")
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            dns_result, tcp_result, http_result, ssl_result, icmp_result = results
+            
+            # Update DNS status
+            if not isinstance(dns_result, Exception) and dns_result.get('success'):
+                host_result.dns_status = "✅"
+                host_result.dns_result = dns_result
+            else:
+                host_result.dns_status = "❌"
+                host_result.errors.append("DNS failed")
+            
+            # Update TCP status
+            if not isinstance(tcp_result, Exception) and tcp_result.get('success'):
+                host_result.tcp_status = "✅"
+                host_result.tcp_result = tcp_result
+            else:
+                host_result.tcp_status = "❌"
+                host_result.errors.append("TCP failed")
+            
+            # Update HTTP status
+            if not isinstance(http_result, Exception) and http_result.get('success'):
+                host_result.http_status = "✅"
+                host_result.http_result = http_result
+            else:
+                host_result.http_status = "❌"
+                host_result.errors.append("HTTP failed")
+            
+            # Update SSL status
+            if not isinstance(ssl_result, Exception) and ssl_result.get('success'):
+                host_result.ssl_status = "✅"
+                host_result.ssl_result = ssl_result
+                host_result.ssl_grade = ssl_result.get('security_grade', 'Unknown')
+            else:
+                host_result.ssl_status = "❌"
+                host_result.errors.append("SSL failed")
+            
+            # Update ICMP result
+            if not isinstance(icmp_result, Exception):
+                host_result.icmp_result = icmp_result
+            
+            # Calculate overall status
+            if host_result.tcp_status == "✅" and host_result.http_status == "✅":
+                host_result.status = "✅ UP"
+                host_result.successful_checks += 1
+            elif host_result.tcp_status == "✅":
+                host_result.status = "⚠️ PARTIAL"
+            else:
+                host_result.status = "❌ DOWN"
+            
+            # Update timing and statistics
+            host_result.response_time = int((time.time() - start_time) * 1000)
+            host_result.last_check = datetime.now()
+            host_result.total_checks += 1
+            
+            # Calculate uptime
+            if host_result.total_checks > 0:
+                host_result.uptime = (host_result.successful_checks / host_result.total_checks) * 100
+            
+            # Update the table
+            table = self.query_one("#hosts-table", DataTable)
+            self._update_host_row(table, host_result)
+            
+            # Log completion
+            log.write_line(f"✅ Completed check for {host_result.host} - {host_result.status} ({host_result.response_time}ms)")
+            
+        except Exception as e:
+            host_result.status = "❌ ERROR"
+            host_result.errors.append(str(e))
+            host_result.last_check = datetime.now()
+            host_result.total_checks += 1
+            
+            log.write_line(f"❌ Error checking {host_result.host}: {str(e)}")
+    
+    async def _check_single_host(self, host_key: str) -> None:
+        """Check a single host and update its status."""
+        await self._check_single_host_internal(host_key)
+    
+    async def _check_all_hosts(self) -> None:
+        """Check all hosts concurrently."""
+        log = self.query_one("#main-log", Log)
+        log.write_line(f"🔄 Refreshing all {len(self.hosts)} hosts...")
+        
+        # Check all hosts concurrently using the actual async methods
+        tasks = []
+        for host_key in self.hosts.keys():
+            tasks.append(self._check_single_host_internal(host_key))
+        
+        await asyncio.gather(*tasks)
+        log.write_line("✅ All hosts refreshed")
+    
+    def action_refresh_current(self) -> None:
+        """Refresh the currently selected host."""
+        table = self.query_one("#hosts-table", DataTable)
+        if table.cursor_row is not None and table.cursor_row < len(self.hosts):
+            host_keys = list(self.hosts.keys())
+            if table.cursor_row < len(host_keys):
+                host_key = host_keys[table.cursor_row]
+                asyncio.create_task(self._check_single_host(host_key))
+    
+    def action_refresh_all(self) -> None:
+        """Refresh all hosts."""
+        asyncio.create_task(self._check_all_hosts())
+    
+    def action_show_ssl_details(self) -> None:
+        """Show SSL certificate details for selected host."""
+        table = self.query_one("#hosts-table", DataTable)
+        if table.cursor_row is not None and table.cursor_row < len(self.hosts):
+            host_keys = list(self.hosts.keys())
+            if table.cursor_row < len(host_keys):
+                host_key = host_keys[table.cursor_row]
+                host_result = self.hosts[host_key]
+                
+                # Show SSL details modal
+                def handle_ssl_detail_result(result: Optional[str]) -> None:
+                    pass  # Modal closed
+                
+                self.push_screen(SSLDetailScreen(host_result), handle_ssl_detail_result)
+    
+    def action_toggle_monitoring(self) -> None:
+        """Toggle automatic monitoring mode."""
+        self.monitoring_active = not self.monitoring_active
+        
+        log = self.query_one("#main-log", Log)
+        
+        if self.monitoring_active:
+            # Start monitoring timer
+            self.monitor_timer = self.set_interval(self.refresh_interval, self._monitor_callback)
+            log.write_line(f"📊 Started monitoring (interval: {self.refresh_interval}s)")
+            self.notify("� Monitoring started")
+        else:
+            # Stop monitoring timer
+            if self.monitor_timer:
+                self.monitor_timer.stop()
+                self.monitor_timer = None
+            log.write_line("⏸️ Stopped monitoring")
+            self.notify("⏸️ Monitoring stopped")
+    
+    def _monitor_callback(self) -> None:
+        """Callback for monitoring timer."""
+        if self.monitoring_active:
+            asyncio.create_task(self._check_all_hosts())
+    
+    def action_command_mode(self) -> None:
+        """Enter command mode (like k9s :command)"""
+        from textual.screen import ModalScreen
+        from textual.widgets import Input
+        from textual.containers import Container
+        
+        def handle_command_result(result: Optional[str]) -> None:
+            if result and result.strip():
+                # Parse command (for now just add as host)
+                host = result.strip()
+                if host.startswith(':'):
+                    host = host[1:]  # Remove : prefix
+                
+                # Add default port if not specified
+                if ':' not in host:
+                    hostname = host
+                    host_key = f"{host}:443"
+                    port = 443
+                else:
+                    try:
+                        hostname, port_str = host.rsplit(':', 1)
+                        port = int(port_str)
+                        host_key = host
+                    except (ValueError, AttributeError):
+                        hostname = host
+                        port = 443
+                        host_key = f"{host}:443"
+                
+                # Add new host
+                host_result = HostResult(host=hostname, port=port)
+                self.hosts[host_key] = host_result
+                
+                # Add to table
+                table = self.query_one("#hosts-table", DataTable)
+                self._add_host_row(table, host_result)
+                
+                # Start monitoring immediately
+                asyncio.create_task(self._check_single_host(host_key))
+        
+        # Create a simple input screen for commands
+        class CommandScreen(ModalScreen[str]):
+            def compose(self):
+                with Container(id="command-container"):
+                    yield Input(placeholder="Enter command (e.g., google.com:443)", id="command_input")
+            
+            def on_mount(self) -> None:
+                self.query_one("#command_input", Input).focus()
+            
+            def on_input_submitted(self, event: Input.Submitted) -> None:
+                self.dismiss(event.value)
+            
+            def on_key(self, event) -> None:
+                if event.key == "escape":
+                    self.dismiss("")
+        
+        self.push_screen(CommandScreen(), handle_command_result)
+    
+    def action_help(self) -> None:
+        """Show help information."""
+        help_text = """
+EZNet TUI - Network Testing Dashboard
 
+Navigation:
+  j/k or ↑/↓    Navigate hosts
+  :             Command mode (add hosts like :google.com)
+  d             Show SSL certificate details
+  r             Refresh current host
+  R             Refresh all hosts
+  m             Toggle monitoring mode
+  q             Quit
+  ?             Show this help
 
-# Textual-based advanced TUI (if available)
-if HAS_TEXTUAL:
-    class EZNetTUI(App):
-        """Advanced EZNet TUI using Textual (if available)"""
-        
-        TITLE = "EZNet TUI - Network Testing Dashboard"
-        SUB_TITLE = "Press ? for help, q to quit"
-        
-        BINDINGS = [
-            Binding("q", "quit", "Quit"),
-            Binding("r", "refresh", "Refresh"),
-            Binding("m", "monitor", "Monitor"),
-            Binding("?", "help", "Help"),
-        ]
-        
-        def __init__(self, initial_hosts: Optional[List[str]] = None):
-            super().__init__()
-            self.simple_tui = SimpleTUI(hosts=initial_hosts)
-        
-        def compose(self) -> ComposeResult:
-            """Create the UI layout"""
-            yield Header()
-            yield Static("EZNet TUI - Advanced Mode", classes="title")
-            yield Static("Coming soon! Using simple mode for now...", id="content")
-            yield Footer()
-        
-        async def action_refresh(self) -> None:
-            """Refresh all hosts"""
-            await self.simple_tui.check_all_hosts()
-            self.notify("✅ Refreshed all hosts")
-        
-        async def action_help(self) -> None:
-            """Show help"""
-            self.notify("Help: Press 'q' to quit, 'r' to refresh, 'm' to monitor")
+Like k9s for network testing! 🚀
+        """
+        self.notify(help_text.strip())
+    
+    def action_cursor_down(self) -> None:
+        """Move cursor down in table."""
+        table = self.query_one("#hosts-table", DataTable)
+        table.action_cursor_down()
+    
+    def action_cursor_up(self) -> None:
+        """Move cursor up in table."""
+        table = self.query_one("#hosts-table", DataTable)
+        table.action_cursor_up()
 
 
 def run_tui(hosts: Optional[List[str]] = None) -> None:
-    """Run the EZNet TUI application"""
-    if not HAS_TEXTUAL:
-        console = Console()
-        console.print("[yellow]⚠️  Textual library not found. Using simple live dashboard mode.[/yellow]")
-        console.print("[dim]For full TUI features, install with: pip install textual[/dim]\n")
-        
-        # Use simple live monitoring
-        simple_tui = SimpleTUI(hosts=hosts)
-        try:
-            asyncio.run(simple_tui.run_live_monitoring())
-        except KeyboardInterrupt:
-            console.print("\n[bold yellow]👋 Goodbye![/bold yellow]")
-    else:
-        # Use advanced Textual TUI
+    """Run the EZNet TUI application."""
+    try:
         app = EZNetTUI(initial_hosts=hosts)
         app.run()
+    except KeyboardInterrupt:
+        print("\n👋 EZNet TUI stopped. Goodbye!")
+    except Exception as e:
+        print(f"❌ Error running TUI: {e}")
+        print("Try running with: eznet --help")
 
 
 if __name__ == "__main__":

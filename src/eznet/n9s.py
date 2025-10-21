@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-e9s - EZNet TUI Command Entry Point
+n9s - EZNet TUI Command Entry Point  
 Interactive terminal user interface for network testing (k9s style)
 """
 
@@ -9,17 +9,17 @@ import argparse
 from typing import List, Optional
 
 def main():
-    """Main entry point for e9s command"""
+    """Main entry point for n9s command"""
     parser = argparse.ArgumentParser(
         description='EZNet TUI - Interactive network testing dashboard (k9s style)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  e9s                                    # Start with default hosts
-  e9s google.com github.com              # Start with specific hosts
-  e9s --config hosts.txt                 # Load hosts from file
-  e9s --live --interval 5                # Live monitoring every 5 seconds
-  e9s --help                             # Show this help
+  n9s                                    # Start empty (k9s style)
+  n9s google.com github.com              # Start with specific hosts
+  n9s --config hosts.txt                 # Load hosts from file
+  n9s --live --interval 5                # Live monitoring every 5 seconds
+  n9s --help                             # Show this help
 
 Keyboard shortcuts in TUI:
   r         - Refresh all hosts
@@ -93,12 +93,13 @@ Like k9s for network testing! 🚀
         # Use hosts from command line
         hosts = args.hosts
     else:
-        # Use default hosts
-        hosts = ["google.com", "github.com", "stackoverflow.com"]
+        # Start empty like k9s - hosts will be added via command mode
+        hosts = []
     
-    if not hosts:
-        print("❌ No hosts specified. Use --help for usage information.")
-        sys.exit(1)
+    # Allow starting with no hosts (k9s style)
+    # if not hosts:
+    #     print("❌ No hosts specified. Use --help for usage information.")
+    #     sys.exit(1)
     
     # Check if textual is available
     try:
@@ -110,28 +111,27 @@ Like k9s for network testing! 🚀
         print("  eznet google.com --ssl-check")
         sys.exit(1)
     
-    # Validate hosts
+    # Validate hosts (allow empty for k9s style)
     valid_hosts = []
     for host in hosts:
         if host and len(host) > 0:
             valid_hosts.append(host)
     
-    if not valid_hosts:
-        print("❌ No valid hosts found.")
-        sys.exit(1)
-    
     # Show startup info
     print(f"🚀 Starting EZNet TUI...")
-    print(f"📊 Monitoring {len(valid_hosts)} hosts: {', '.join(valid_hosts[:3])}{' ...' if len(valid_hosts) > 3 else ''}")
+    if valid_hosts:
+        print(f"📊 Monitoring {len(valid_hosts)} hosts: {', '.join(valid_hosts[:3])}{' ...' if len(valid_hosts) > 3 else ''}")
+    else:
+        print("📊 Starting empty - use : to add hosts (k9s style)")
     print(f"⏰ Refresh interval: {args.interval}s")
     print(f"🔌 Default port: {args.port}")
     print()
-    print("💡 Press ? for help, q to quit")
+    print("💡 Press : to add hosts, ? for help, q to quit")
     print("=" * 50)
     
     try:
-        # Start the TUI
-        run_tui(hosts=valid_hosts)
+        # Start the TUI (pass None if empty list to match expected behavior)
+        run_tui(hosts=valid_hosts if valid_hosts else None)
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
     except Exception as e:

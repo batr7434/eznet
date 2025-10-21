@@ -1,0 +1,11 @@
+google.com
+github.com
+stackoverflow.com
+apple.com
+microsoft.com
+# DNS servers
+8.8.8.8
+1.1.1.1
+# CDNs
+cloudflare.com
+fastly.com
