@@ -31,6 +31,17 @@ cd eznet
 pip install -e .
 ```
 
+### Using Homebrew
+
+```bash
+# Add tap and install
+brew tap batr7434/eznet
+brew install eznet
+
+# Or one-liner
+brew install batr7434/eznet/eznet
+```
+
 ### Using pip (once published)
 
 ```bash
@@ -338,6 +349,27 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - Inspired by traditional network tools like `ping`, `telnet`, `nc`, and `curl`
 - Built with modern Python async/await patterns
 - Uses the excellent `rich` library for beautiful terminal output
+
+## Troubleshooting 🔧
+
+### Homebrew Installation Issues
+
+If `brew install eznet` suggests installing `zeronet` instead, use the full tap name:
+
+```bash
+# Correct installation
+brew install batr7434/eznet/eznet
+
+# Or add tap first
+brew tap batr7434/eznet
+brew install eznet
+```
+
+### Common Issues
+
+- **"Formula not found"**: Make sure you've added the tap first
+- **Permission errors**: Try `brew doctor` to check your Homebrew setup
+- **Python version conflicts**: EZNet requires Python 3.12+
 
 ## Support 💬
 

@@ -4,13 +4,23 @@ Welcome to EZNet! This guide will get you up and running in just a few minutes.
 
 ## 🚀 Installation & Setup
 
-### Method 1: Direct Installation (Recommended)
+### Method 1: Homebrew (Recommended)
+```bash
+# One-liner installation
+brew install batr7434/eznet/eznet
+
+# Or add tap first
+brew tap batr7434/eznet
+brew install eznet
+```
+
+### Method 2: Direct Installation
 ```bash
 # Install directly from GitHub
 curl -fsSL https://raw.githubusercontent.com/batr7434/eznet/main/install.sh | bash
 ```
 
-### Method 2: From Source
+### Method 3: From Source
 ```bash
 # Clone the repository
 git clone https://github.com/batr7434/eznet.git
@@ -24,7 +34,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-### Method 3: Using pip (when available)
+### Method 4: Using pip (when available)
 ```bash
 pip install eznet
 ```
