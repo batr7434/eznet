@@ -144,6 +144,19 @@ class EZNetTUI(App):
         text-style: bold;
     }
     
+    .k9s-command-input {
+        background: #0d1117;
+        color: #c9d1d9;
+        border: solid #30363d;
+        height: 1;
+        margin: 0 1;
+    }
+    
+    .k9s-command-input:focus {
+        border: solid #58a6ff;
+        background: #161b22;
+    }
+    
     .k9s-filter {
         background: #21262d;
         color: #7d8590;
@@ -186,31 +199,7 @@ class EZNetTUI(App):
         color: #ffffff;
     }
     
-    /* Command input container */
-    #command-container {
-        height: 3;
-        background: #21262d;
-        border-top: solid #30363d;
-        border-bottom: solid #30363d; 
-    }
-    
-    .k9s-command-label {
-        color: #58a6ff;
-        text-style: bold;
-        height: 1;
-        padding: 0 1;
-    }
-    
-    .k9s-command-input {
-        background: #0d1117;
-        color: #c9d1d9;
-        border: solid #30363d;
-        height: 1;
-    }
-    
-    .k9s-command-input:focus {
-        border: solid #58a6ff;
-    }
+
     
     /* Footer styling like k9s */
     #footer-container {
@@ -306,9 +295,10 @@ class EZNetTUI(App):
     
     def compose(self) -> ComposeResult:
         """Create the TUI layout (k9s style)."""
-        # k9s-style context bar at top
+        # k9s-style header with context and command input at top
         yield Container(
             Static("[0] hosts", id="context-bar", classes="k9s-header"),
+            Input(placeholder="", id="command-input", classes="k9s-command-input"),
             id="header-container"
         )
         
@@ -318,17 +308,10 @@ class EZNetTUI(App):
             id="main-container"
         )
         
-        # k9s-style command input (always visible)
-        yield Container(
-            Static("Command:", classes="k9s-command-label"),
-            Input(placeholder="Type command (e.g., google.com:443)", id="command-input", classes="k9s-command-input"),
-            id="command-container"
-        )
-        
         # k9s-style status and help bar at bottom
         yield Container(
             Static("", id="status-bar", classes="k9s-status"),
-            Static("<Enter> Execute <d> Describe <r> Refresh <q> Quit", id="help-bar", classes="k9s-help"),
+            Static("<:> Command <d> Describe <r> Refresh <q> Quit", id="help-bar", classes="k9s-help"),
             id="footer-container"
         )
     
@@ -346,6 +329,10 @@ class EZNetTUI(App):
         
         # Update context bar
         self._update_context_bar()
+        
+        # Focus the command input initially (like k9s)
+        command_input = self.query_one("#command-input", Input)
+        command_input.placeholder = "Filter/Command..."
         
         # Initial check if we have hosts
         if self.hosts:
@@ -652,6 +639,12 @@ class EZNetTUI(App):
                 self._process_command(command)
                 # Clear the input field
                 event.input.value = ""
+    
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle live input changes (like k9s filter)."""
+        if event.input.id == "command-input":
+            # In k9s, this would be used for filtering, but we use it for command preview
+            pass
     
 
     
