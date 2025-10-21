@@ -36,7 +36,8 @@ dependencies = [
     "click>=8.0.0",
     "rich>=13.0.0",
     "httpx>=0.24.0",
-    "aiodns>=3.0.0"
+    "aiodns>=3.0.0",
+    "textual>=0.50.0"
 ]
 
 [project.optional-dependencies]
@@ -64,6 +65,7 @@ Issues = "https://github.com/batr7434/eznet/issues"
 
 [project.scripts]
 eznet = "eznet.cli:main"
+e9s = "eznet.e9s:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
