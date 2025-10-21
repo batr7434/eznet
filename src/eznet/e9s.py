@@ -1,141 +1,86 @@
 #!/usr/bin/env python3
 """
-e9s - EZNet TUI Command Entry Point
-Interactive terminal user interface for network testing (k9s style)
+e9s - EZNet Terminal User Interface
+
+A k9s-inspired network testing TUI for comprehensive network analysis.
+Named e9s as an homage to k9s - the popular Kubernetes TUI.
 """
 
 import sys
-import argparse
-from typing import List, Optional
+import click
+from rich.console import Console
 
-def main():
-    """Main entry point for e9s command"""
-    parser = argparse.ArgumentParser(
-        description='EZNet TUI - Interactive network testing dashboard (k9s style)',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  e9s                                    # Start with default hosts
-  e9s google.com github.com              # Start with specific hosts
-  e9s --config hosts.txt                 # Load hosts from file
-  e9s --live --interval 5                # Live monitoring every 5 seconds
-  e9s --help                             # Show this help
+console = Console()
 
-Keyboard shortcuts in TUI:
-  r         - Refresh all hosts
-  s         - SSL certificate details
-  p         - Port scanner view  
-  m         - Toggle monitoring
-  a         - Add host
-  d         - Delete host
-  q         - Quit
-  ?         - Help
 
-Like k9s for network testing! 🚀
-        """
-    )
+@click.command()
+@click.version_option(version="0.2.0", prog_name="e9s")
+@click.option(
+    "--theme", 
+    default="k9s", 
+    help="UI theme (currently only 'k9s' available)",
+    type=click.Choice(["k9s"])
+)
+@click.option(
+    "--debug", 
+    is_flag=True, 
+    help="Enable debug mode for development"
+)
+def main(theme: str, debug: bool) -> None:
+    """
+    e9s - EZNet Network Testing TUI
     
-    parser.add_argument(
-        'hosts',
-        nargs='*',
-        help='Hostnames or IP addresses to monitor (default: google.com, github.com, stackoverflow.com)'
-    )
+    A terminal user interface for comprehensive network testing inspired by k9s.
+    Provides interactive host management, real-time network scanning, and 
+    detailed SSL certificate analysis.
     
-    parser.add_argument(
-        '--config', '-c',
-        help='Configuration file with list of hosts (one per line)'
-    )
+    Features:
+    • Interactive host management with k9s-style navigation  
+    • Real-time DNS, TCP, HTTP, and ICMP testing
+    • SSL/TLS certificate analysis with security grading
+    • Concurrent scanning with progress indicators
+    • Detailed results view with tabbed interface
     
-    parser.add_argument(
-        '--live', '-l',
-        action='store_true',
-        help='Start in live monitoring mode'
-    )
+    Navigation:
+    • j/k or ↑/↓  - Navigate hosts
+    • a           - Add new host  
+    • d           - Delete host
+    • r           - Refresh selected host
+    • s           - Scan all hosts
+    • Enter       - View detailed results
+    • q           - Quit
     
-    parser.add_argument(
-        '--interval', '-i',
-        type=float,
-        default=5.0,
-        help='Refresh interval in seconds for live mode (default: 5.0)'
-    )
+    Examples:
     
-    parser.add_argument(
-        '--port', '-p',
-        type=int,
-        default=443,
-        help='Default port to test (default: 443)'
-    )
-    
-    parser.add_argument(
-        '--timeout', '-t',  
-        type=int,
-        default=5,
-        help='Connection timeout in seconds (default: 5)'
-    )
-    
-    args = parser.parse_args()
-    
-    # Determine hosts to monitor
-    hosts: List[str] = []
-    
-    if args.config:
-        # Load hosts from config file
-        try:
-            with open(args.config, 'r') as f:
-                hosts = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-        except FileNotFoundError:
-            print(f"❌ Config file not found: {args.config}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ Error reading config file: {e}")
-            sys.exit(1)
-    elif args.hosts:
-        # Use hosts from command line
-        hosts = args.hosts
-    else:
-        # Start empty like k9s - hosts will be added via command mode
-        hosts = []
-    
-    # Allow starting with no hosts (k9s style)
-    # if not hosts:
-    #     print("❌ No hosts specified. Use --help for usage information.")
-    #     sys.exit(1)
-    
-    # Check if textual is available
+        e9s                    # Start TUI
+        
+        e9s --debug           # Start with debug mode
+    """
     try:
-        from .tui import run_tui
-    except ImportError:
-        print("❌ Textual library not found. Installing...")
-        print("Run: pip install textual")
-        print("\nAlternatively, use regular eznet command for CLI mode:")
-        print("  eznet google.com --ssl-check")
+        from .tui.advanced_app import run_tui
+        
+        if debug:
+            console.print("[yellow]Starting e9s in debug mode...[/yellow]")
+            
+        console.print("[cyan]🚀 Starting e9s - EZNet Network Testing TUI[/cyan]")
+        console.print("[dim]Loading interface...[/dim]")
+        run_tui()
+        
+    except ImportError as e:
+        console.print("[red]Error: TUI dependencies not available.[/red]")
+        console.print("[yellow]Install with: pip install textual>=0.45.0[/yellow]")
+        if debug:
+            console.print(f"[dim]Import error details: {e}[/dim]")
         sys.exit(1)
-    
-    # Validate hosts (allow empty for k9s style)
-    valid_hosts = []
-    for host in hosts:
-        if host and len(host) > 0:
-            valid_hosts.append(host)
-    
-    # Show startup info
-    print(f"🚀 Starting EZNet TUI...")
-    if valid_hosts:
-        print(f"📊 Monitoring {len(valid_hosts)} hosts: {', '.join(valid_hosts[:3])}{' ...' if len(valid_hosts) > 3 else ''}")
-    else:
-        print("📊 Starting empty - use : to add hosts (k9s style)")
-    print(f"⏰ Refresh interval: {args.interval}s")
-    print(f"🔌 Default port: {args.port}")
-    print()
-    print("💡 Press : to add hosts, ? for help, q to quit")
-    print("=" * 50)
-    
-    try:
-        # Start the TUI (pass None if empty list to match expected behavior)
-        run_tui(hosts=valid_hosts if valid_hosts else None)
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        console.print("\n[yellow]e9s interrupted by user[/yellow]")
+        sys.exit(0)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        console.print(f"[red]Error starting e9s: {e}[/red]")
+        if debug:
+            import traceback
+            console.print("[dim]Traceback:[/dim]")
+            traceback.print_exc()
         sys.exit(1)
 
 

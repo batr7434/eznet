@@ -666,8 +666,9 @@ def display_results(result: EZNetResult) -> None:
 @click.option("--json", "output_json", is_flag=True, help="Output results in JSON format")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--max-concurrent", default=50, help="Maximum concurrent connections (default: 50)")
+@click.option("--tui", is_flag=True, help="Launch interactive TUI (Terminal User Interface) similar to k9s")
 @click.version_option(version="0.2.0", prog_name="eznet")
-def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int) -> None:
+def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int, tui: bool) -> None:
     """
     EZNet - Comprehensive network testing tool.
     
@@ -693,12 +694,25 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
         eznet google.com -p 443 --ssl-check
         
         eznet 8.8.8.8 -p 53 --json
+        
+        eznet --tui
     """
+    # Handle TUI mode
+    if tui:
+        try:
+            from .tui.advanced_app import run_tui
+            run_tui()
+            return
+        except ImportError:
+            console.print("[red]Error: TUI dependencies not available. Install with: pip install textual[/red]")
+            sys.exit(1)
+    
     # Validate input - either host or hosts-file must be provided
     if not host and not hosts_file:
         console.print("[red]Error: Either HOST or --hosts-file must be provided[/red]")
         console.print("[yellow]Usage: eznet HOST [OPTIONS][/yellow]")
         console.print("[yellow]   or: eznet --hosts-file FILE [OPTIONS][/yellow]")
+        console.print("[yellow]   or: eznet --tui[/yellow]")
         sys.exit(1)
     
     if host and hosts_file:
