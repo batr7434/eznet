@@ -639,7 +639,7 @@ def display_results(result: EZNetResult) -> None:
 
 
 @click.command()
-@click.option("--host", "-H", help="Hostname or IP address to test (can be comma-separated for multiple hosts)")
+@click.argument("host", required=False)
 @click.option("--hosts-file", type=click.Path(exists=True), help="File containing list of hosts (one per line)")
 @click.option("--port", "-p", help="Port number to test (can be single port, range like 80-90, or comma-separated)")
 @click.option("--common-ports", is_flag=True, help="Scan common ports (top 100)")
@@ -658,29 +658,31 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
     
     Examples:
     
-        eznet -H google.com
+        eznet google.com
         
-        eznet -H google.com -p 80
+        eznet google.com -p 80
         
-        eznet -H google.com -p 80-90
+        eznet google.com -p 80-90
         
-        eznet -H google.com --common-ports
+        eznet google.com --common-ports
         
-        eznet -H google.com,github.com,stackoverflow.com -p 80
+        eznet google.com,github.com,stackoverflow.com -p 80
         
         eznet --hosts-file hosts.txt -p 443
         
-        eznet -H google.com -p 443 --ssl-check
+        eznet google.com -p 443 --ssl-check
         
-        eznet -H 8.8.8.8 -p 53 --json
+        eznet 8.8.8.8 -p 53 --json
     """
     # Validate input - either host or hosts-file must be provided
     if not host and not hosts_file:
-        console.print("[red]Error: Either --host or --hosts-file must be provided[/red]")
+        console.print("[red]Error: Either HOST or --hosts-file must be provided[/red]")
+        console.print("[yellow]Usage: eznet HOST [OPTIONS][/yellow]")
+        console.print("[yellow]   or: eznet --hosts-file FILE [OPTIONS][/yellow]")
         sys.exit(1)
     
     if host and hosts_file:
-        console.print("[red]Error: Cannot use both --host and --hosts-file[/red]")
+        console.print("[red]Error: Cannot use both HOST and --hosts-file[/red]")
         sys.exit(1)
     
     # Prepare host list

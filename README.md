@@ -161,7 +161,7 @@ eznet api.example.com -p 443 --ssl-check --json
 
 ```
 ╭─────────────────────────────────────────────────────────────────╮
-│             EZNet Port Scan Results for example.com (6 ports)   │
+│             EZNet Port Scan Results for example.com (6 ports)    │
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
@@ -229,15 +229,18 @@ eznet api.example.com -p 443 --ssl-check --json
 ## Command Line Options 🛠️
 
 ```
-Usage: eznet [OPTIONS]
+Usage: eznet [OPTIONS] HOST
 
   EZNet - Comprehensive network testing tool.
 
   Automatically performs DNS resolution, TCP connection tests, HTTP checks,
   and ICMP ping tests without requiring you to remember specific commands.
 
+Arguments:
+  HOST                    Hostname or IP address to test (can be comma-separated)
+
 Options:
-  -H, --host TEXT         Hostname or IP address to test  [required]
+  --hosts-file PATH       File containing list of hosts (one per line)
   -p, --port TEXT         Port number or range to test (e.g., "80", "80-90")
   --common-ports          Scan common ports (115+ ports)
   --ssl-check             Perform SSL/TLS certificate analysis
