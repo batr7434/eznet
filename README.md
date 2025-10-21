@@ -1,21 +1,30 @@
 # EZNet 🌐
 
-A comprehensive network testing CLI tool that automatically performs various network tests without requiring users to remember specific commands like `ping`, `nc`, `curl`, or `telnet`.
+A comprehensive network testing CLI tool with both command-line and interactive TUI modes. Features k9s-style terminal interface for real-time network monitoring and traditional CLI for automated testing.
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://python.org)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Features ✨
 
-EZNet automatically performs the following tests:
-
+### Core Network Testing
 - **DNS Resolution**: IPv4 & IPv6 address resolution
 - **TCP Connection**: Test connectivity to specific ports
 - **HTTP/HTTPS Check**: Retrieve headers and response information
 - **ICMP Ping**: Test basic connectivity (when possible)
 - **Port Range Scanning**: Scan multiple ports in a range (e.g., 80-90)
 - **Common Ports Scanning**: Scan 115+ frequently used ports
-- **SSL/TLS Certificate Analysis**: Comprehensive certificate security assessment with detailed certificate information included by default
+- **SSL/TLS Certificate Analysis**: Comprehensive certificate security assessment
+
+### Interactive TUI (Terminal User Interface)
+- **k9s-Style Interface**: Familiar navigation for Kubernetes users
+- **Real-time Monitoring**: Live network status updates
+- **Direct Command Input**: Type `:hostname` to add hosts (like k9s)
+- **Comprehensive Dashboard**: DNS, TCP, HTTP, SSL status at a glance
+- **SSL Certificate Details**: Modal popups with certificate information
+- **Keyboard Navigation**: j/k keys, `:` for commands, `d` for details
+
+### Output & Export
 - **Rich Output**: Beautiful, colored terminal output
 - **JSON Export**: Machine-readable output format
 - **Async Operations**: Fast parallel testing
@@ -49,6 +58,44 @@ pip install eznet
 ```
 
 ## Usage 🚀
+
+### Interactive TUI Mode (n9s)
+
+**Like k9s for network testing!** Start the interactive TUI with:
+
+```bash
+# Start TUI (empty, k9s-style)
+n9s
+
+# Or start with initial hosts
+n9s google.com github.com
+```
+
+**TUI Navigation:**
+```
+:hostname          Add host (e.g., :google.com, :api.example.com:8443)
+j/k or ↑/↓         Navigate hosts
+d                  Show SSL certificate details
+r                  Refresh current host
+shift+r            Refresh all hosts
+m                  Toggle monitoring mode
+q                  Quit
+?                  Help
+```
+
+**TUI Output:**
+```
+[0] hosts (2)                                           
+                                                        
+NAME               STATUS      DNS  TCP  HTTP  SSL  GRADE  RESPONSE  AGE
+google.com:443     ✓ Online    ✓    ✓    ✓     ✓    A+     45.2ms    30s
+github.com:443     ✓ Online    ✓    ✓    ✓     ✓    A      67.1ms    45s
+
+2/2 hosts online
+<:> Command <d> Describe <r> Refresh <q> Quit
+```
+
+### CLI Mode (eznet)
 
 ### Basic Examples
 
@@ -237,6 +284,27 @@ eznet api.example.com -p 443 --ssl-check --json
 ```
 
 ## Command Line Options 🛠️
+
+### TUI Mode (n9s)
+
+```
+Usage: n9s [OPTIONS] [HOSTS...]
+
+  EZNet TUI - Interactive network testing dashboard (k9s style)
+
+Arguments:
+  HOSTS                   Hostnames or IP addresses to monitor (optional)
+
+Options:
+  --config CONFIG, -c     Configuration file with list of hosts (one per line)
+  --live, -l              Start in live monitoring mode
+  --interval INTERVAL, -i Refresh interval in seconds for live mode (default: 5.0)
+  --port PORT, -p         Default port to test (default: 443)
+  --timeout TIMEOUT, -t   Connection timeout in seconds (default: 5)
+  --help                  Show this message and exit
+```
+
+### CLI Mode (eznet)
 
 ```
 Usage: eznet [OPTIONS] HOST
