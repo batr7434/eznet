@@ -165,6 +165,11 @@ class EZNetTUI(App):
         border: none;
     }
     
+    DataTable .datatable--cell {
+        background: #0d1117;
+        color: #c9d1d9;
+    }
+    
     DataTable > .datatable--header {
         background: #21262d;
         color: #58a6ff;
@@ -260,6 +265,7 @@ class EZNetTUI(App):
         self.monitor_timer: Optional[Timer] = None
         self.command_input: Optional[Input] = None
         self.command_mode_active = False
+        self.command_buffer = ""
         
         # Initialize network checkers
         self.dns_checker = DNSChecker()
@@ -298,10 +304,10 @@ class EZNetTUI(App):
     
     def on_mount(self) -> None:
         """Initialize the UI when mounted."""
-        # Setup the hosts table with k9s-style columns
+        # Setup the hosts table with comprehensive columns (like eznet output)
         table = self.query_one("#hosts-table", DataTable)
         table.add_columns(
-            "NAME", "READY", "STATUS", "DNS", "TCP", "HTTP", "SSL", "AGE"
+            "NAME", "STATUS", "DNS", "TCP", "HTTP", "SSL", "GRADE", "RESPONSE", "AGE"
         )
         
         # Add initial rows
@@ -316,17 +322,30 @@ class EZNetTUI(App):
             self.call_after_refresh(self._check_all_hosts)
     
     def _add_host_row(self, table: DataTable, host_result: HostResult) -> None:
-        """Add a host row to the table (k9s style)."""
-        # k9s-style formatting
+        """Add a host row to the table (eznet-style with comprehensive info)."""
         name = f"{host_result.host}:{host_result.port}"
-        ready = "1/1" if host_result.status == "🟢 Online" else "0/1"
-        status = "Running" if host_result.status == "🟢 Online" else "Failed"
-        dns_status = "✓" if host_result.dns_status == "🟢 OK" else "✗"
-        tcp_status = "✓" if host_result.tcp_status == "🟢 OK" else "✗"
-        http_status = "✓" if host_result.http_status == "🟢 OK" else "✗"
-        ssl_status = "✓" if host_result.ssl_status == "🟢 OK" else "✗"
         
-        # Calculate age (time since first check)
+        # Status with color coding
+        if host_result.status == "🟢 Online":
+            status = "[green]✓ Online[/green]"
+        elif host_result.status == "� Offline":
+            status = "[red]✗ Offline[/red]"
+        else:
+            status = "[yellow]⧖ Testing[/yellow]"
+        
+        # Detailed status for each service
+        dns_status = "[green]✓[/green]" if host_result.dns_status == "🟢 OK" else "[red]✗[/red]"
+        tcp_status = "[green]✓[/green]" if host_result.tcp_status == "🟢 OK" else "[red]✗[/red]"  
+        http_status = "[green]✓[/green]" if host_result.http_status == "🟢 OK" else "[red]✗[/red]"
+        ssl_status = "[green]✓[/green]" if host_result.ssl_status == "🟢 OK" else "[red]✗[/red]"
+        
+        # SSL Grade (like eznet output)
+        ssl_grade = host_result.ssl_grade if host_result.ssl_grade else "-"
+        
+        # Response time
+        response_time = f"{host_result.response_time:.1f}ms" if host_result.response_time > 0 else "-"
+        
+        # Calculate age
         age = "0s"
         if host_result.last_check:
             from datetime import datetime
@@ -340,25 +359,38 @@ class EZNetTUI(App):
         
         table.add_row(
             name,
-            ready,
             status,
             dns_status,
             tcp_status,
             http_status,
             ssl_status,
+            ssl_grade,
+            response_time,
             age,
             key=f"{host_result.host}:{host_result.port}"
         )
     
     def _update_host_row(self, table: DataTable, host_result: HostResult) -> None:
-        """Update a host row in the table (k9s style)."""
-        # k9s-style formatting
-        ready = "1/1" if host_result.status == "🟢 Online" else "0/1"
-        status = "Running" if host_result.status == "🟢 Online" else "Failed"
-        dns_status = "✓" if host_result.dns_status == "🟢 OK" else "✗"
-        tcp_status = "✓" if host_result.tcp_status == "🟢 OK" else "✗"
-        http_status = "✓" if host_result.http_status == "🟢 OK" else "✗"
-        ssl_status = "✓" if host_result.ssl_status == "🟢 OK" else "✗"
+        """Update a host row in the table (eznet-style with comprehensive info)."""
+        # Status with color coding
+        if host_result.status == "🟢 Online":
+            status = "[green]✓ Online[/green]"
+        elif host_result.status == "� Offline":
+            status = "[red]✗ Offline[/red]"
+        else:
+            status = "[yellow]⧖ Testing[/yellow]"
+        
+        # Detailed status for each service
+        dns_status = "[green]✓[/green]" if host_result.dns_status == "🟢 OK" else "[red]✗[/red]"
+        tcp_status = "[green]✓[/green]" if host_result.tcp_status == "🟢 OK" else "[red]✗[/red]"
+        http_status = "[green]✓[/green]" if host_result.http_status == "🟢 OK" else "[red]✗[/red]"
+        ssl_status = "[green]✓[/green]" if host_result.ssl_status == "🟢 OK" else "[red]✗[/red]"
+        
+        # SSL Grade
+        ssl_grade = host_result.ssl_grade if host_result.ssl_grade else "-"
+        
+        # Response time
+        response_time = f"{host_result.response_time:.1f}ms" if host_result.response_time > 0 else "-"
         
         # Calculate age
         age = "0s"
@@ -375,12 +407,13 @@ class EZNetTUI(App):
         # Find the row and update it
         row_key = f"{host_result.host}:{host_result.port}"
         try:
-            table.update_cell(row_key, "READY", ready)
             table.update_cell(row_key, "STATUS", status)
             table.update_cell(row_key, "DNS", dns_status)
             table.update_cell(row_key, "TCP", tcp_status)
             table.update_cell(row_key, "HTTP", http_status)
             table.update_cell(row_key, "SSL", ssl_status)
+            table.update_cell(row_key, "GRADE", ssl_grade)
+            table.update_cell(row_key, "RESPONSE", response_time)
             table.update_cell(row_key, "AGE", age)
         except Exception:
             # Row doesn't exist, add it
@@ -570,65 +603,86 @@ class EZNetTUI(App):
             asyncio.create_task(self._check_all_hosts())
     
     def action_command_mode(self) -> None:
-        """Enter command mode (like k9s :command)"""
-        from textual.screen import ModalScreen
-        from textual.widgets import Input
-        from textual.containers import Container
+        """Enter command mode (like k9s - direct typing)"""
+        # In k9s style, we start collecting input directly
+        self.command_mode_active = True
+        self.command_buffer = ":"
         
-        def handle_command_result(result: Optional[str]) -> None:
-            if result and result.strip():
-                # Parse command (for now just add as host)
-                host = result.strip()
-                if host.startswith(':'):
-                    host = host[1:]  # Remove : prefix
-                
-                # Add default port if not specified
-                if ':' not in host:
-                    hostname = host
-                    host_key = f"{host}:443"
-                    port = 443
+        # Update filter bar to show command input
+        filter_bar = self.query_one("#filter-bar", Static)
+        filter_bar.update(self.command_buffer + "_")
+    
+    def on_key(self, event) -> None:
+        """Handle key events for k9s-style command input."""
+        if self.command_mode_active:
+            if event.key == "enter":
+                # Process command
+                command = self.command_buffer[1:]  # Remove : prefix
+                self._process_command(command)
+                self._exit_command_mode()
+            elif event.key == "escape":
+                # Cancel command
+                self._exit_command_mode()
+            elif event.key == "backspace":
+                # Handle backspace
+                if len(self.command_buffer) > 1:
+                    self.command_buffer = self.command_buffer[:-1]
                 else:
-                    try:
-                        hostname, port_str = host.rsplit(':', 1)
-                        port = int(port_str)
-                        host_key = host
-                    except (ValueError, AttributeError):
-                        hostname = host
-                        port = 443
-                        host_key = f"{host}:443"
-                
-                # Add new host
-                host_result = HostResult(host=hostname, port=port)
-                self.hosts[host_key] = host_result
-                
-                # Add to table
-                table = self.query_one("#hosts-table", DataTable)
-                self._add_host_row(table, host_result)
-                
-                # Update context bar
-                self._update_context_bar()
-                
-                # Start monitoring immediately
-                asyncio.create_task(self._check_single_host(host_key))
+                    self._exit_command_mode()
+                    return
+                filter_bar = self.query_one("#filter-bar", Static)
+                filter_bar.update(self.command_buffer + "_")
+            elif event.character and event.character.isprintable():
+                # Add character to buffer
+                self.command_buffer += event.character
+                filter_bar = self.query_one("#filter-bar", Static)
+                filter_bar.update(self.command_buffer + "_")
+        else:
+            # Normal key handling - let the bindings work
+            pass
+    
+    def _exit_command_mode(self) -> None:
+        """Exit command mode and clear filter bar."""
+        self.command_mode_active = False
+        self.command_buffer = ""
+        filter_bar = self.query_one("#filter-bar", Static)
+        filter_bar.update("")
+    
+    def _process_command(self, command: str) -> None:
+        """Process the entered command."""
+        if not command.strip():
+            return
+            
+        host = command.strip()
         
-        # Create a k9s-style command input screen
-        class CommandScreen(ModalScreen[str]):
-            def compose(self):
-                with Container(id="command-container", classes="k9s-command"):
-                    yield Static("Command:", classes="k9s-command-label")
-                    yield Input(placeholder="host:port (e.g., google.com:443)", id="command_input", classes="k9s-command-input")
-            
-            def on_mount(self) -> None:
-                self.query_one("#command_input", Input).focus()
-            
-            def on_input_submitted(self, event: Input.Submitted) -> None:
-                self.dismiss(event.value)
-            
-            def on_key(self, event) -> None:
-                if event.key == "escape":
-                    self.dismiss("")
+        # Add default port if not specified
+        if ':' not in host:
+            hostname = host
+            host_key = f"{host}:443"
+            port = 443
+        else:
+            try:
+                hostname, port_str = host.rsplit(':', 1)
+                port = int(port_str)
+                host_key = host
+            except (ValueError, AttributeError):
+                hostname = host
+                port = 443
+                host_key = f"{host}:443"
         
-        self.push_screen(CommandScreen(), handle_command_result)
+        # Add new host
+        host_result = HostResult(host=hostname, port=port)
+        self.hosts[host_key] = host_result
+        
+        # Add to table
+        table = self.query_one("#hosts-table", DataTable)
+        self._add_host_row(table, host_result)
+        
+        # Update context bar
+        self._update_context_bar()
+        
+        # Start comprehensive check (like eznet command)
+        asyncio.create_task(self._check_single_host(host_key))
     
     def action_help(self) -> None:
         """Show help information."""
