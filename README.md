@@ -88,11 +88,17 @@ eznet example.com --common-ports --json
 ### SSL/TLS Certificate Analysis
 
 ```bash
-# Analyze SSL certificate
+# Analyze SSL certificate (automatically uses port 443)
+eznet github.com --ssl-check
+
+# Analyze SSL certificate with explicit port
 eznet github.com -p 443 --ssl-check
 
 # SSL analysis with verbose output
-eznet github.com -p 443 --ssl-check --verbose
+eznet github.com --ssl-check --verbose
+
+# Check non-standard HTTPS port
+eznet api.example.com -p 8443 --ssl-check
 ```
 
 ### Advanced Examples

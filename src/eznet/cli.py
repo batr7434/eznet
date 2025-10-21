@@ -680,6 +680,8 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
         
         eznet --hosts-file hosts.txt -p 443
         
+        eznet google.com --ssl-check
+        
         eznet google.com -p 443 --ssl-check
         
         eznet 8.8.8.8 -p 53 --json
@@ -717,6 +719,11 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
         ports = get_common_ports()
         if verbose:
             console.print(f"[dim]Scanning {len(ports)} common ports[/dim]")
+    elif ssl_check:
+        # If --ssl-check is specified without port, default to 443
+        ports = [443]
+        if verbose:
+            console.print(f"[dim]Using default HTTPS port 443 for SSL check[/dim]")
     
     # Validate port count
     if len(ports) > 1000:
