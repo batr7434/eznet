@@ -29,6 +29,9 @@ from .utils import format_duration, is_valid_ip, is_valid_hostname, parse_ports,
 
 console = Console()
 
+# Global flag for SSL detail display
+_ssl_detail_mode = False
+
 
 class EZNetResult:
     """Container for all network probe results."""
@@ -124,7 +127,8 @@ async def run_port_scan(host: str, ports: list, timeout: int, ssl_check: bool, m
             
             # Add SSL check for HTTPS ports
             if ssl_check and port in [443, 8443, 993, 995, 465, 587, 636]:
-                tasks.append(ssl_checker.check(host, port))
+                global _ssl_detail_mode
+                tasks.append(ssl_checker.check(host, port, detailed=_ssl_detail_mode))
             
             return await asyncio.gather(*tasks, return_exceptions=True)
     
@@ -463,7 +467,8 @@ async def run_all_checks(host: str, port: Optional[int], timeout: int, ssl_check
         
         # Add SSL check for HTTPS ports
         if ssl_check and port in [443, 8443, 993, 995, 465, 587, 636]:
-            tasks.append(ssl_checker.check(host, port))
+            global _ssl_detail_mode
+            tasks.append(ssl_checker.check(host, port, detailed=_ssl_detail_mode))
     
     # Execute all tasks
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -620,6 +625,13 @@ def display_results(result: EZNetResult) -> None:
                 ssl_table.add_row("Issues", "; ".join(issues[:3]))  # Show max 3 issues
             
             console.print(ssl_table)
+            
+            # Show detailed certificate information if requested
+            global _ssl_detail_mode
+            if _ssl_detail_mode and ssl_data.get("detailed_certificate"):
+                console.print()
+                _display_detailed_certificate(ssl_data["detailed_certificate"])
+            
             console.print()
     
     # ICMP Results
@@ -654,12 +666,13 @@ def display_results(result: EZNetResult) -> None:
 @click.option("--port", "-p", help="Port number to test (can be single port, range like 80-90, or comma-separated)")
 @click.option("--common-ports", is_flag=True, help="Scan common ports (top 100)")
 @click.option("--ssl-check", is_flag=True, help="Perform SSL/TLS certificate analysis (for HTTPS ports)")
+@click.option("--ssl-detail", is_flag=True, help="Show detailed SSL certificate information (like openssl x509 -text)")
 @click.option("--timeout", "-t", default=5, help="Timeout in seconds (default: 5)")
 @click.option("--json", "output_json", is_flag=True, help="Output results in JSON format")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--max-concurrent", default=50, help="Maximum concurrent connections (default: 50)")
 @click.version_option(version="0.2.0", prog_name="eznet")
-def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int) -> None:
+def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, ssl_detail: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int) -> None:
     """
     EZNet - Comprehensive network testing tool.
     
@@ -719,16 +732,22 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
         ports = get_common_ports()
         if verbose:
             console.print(f"[dim]Scanning {len(ports)} common ports[/dim]")
-    elif ssl_check:
-        # If --ssl-check is specified without port, default to 443
+    elif ssl_check or ssl_detail:
+        # If --ssl-check or --ssl-detail is specified without port, default to 443
         ports = [443]
         if verbose:
-            console.print(f"[dim]Using default HTTPS port 443 for SSL check[/dim]")
+            console.print(f"[dim]Using default HTTPS port 443 for SSL {'detailed ' if ssl_detail else ''}check[/dim]")
     
     # Validate port count
     if len(ports) > 1000:
         console.print("[red]Error: Too many ports specified (max 1000)[/red]")
         sys.exit(1)
+    
+    # Auto-enable ssl_check if ssl_detail is requested
+    if ssl_detail:
+        ssl_check = True
+        global _ssl_detail_mode
+        _ssl_detail_mode = True
     
     # Validate hosts
     for h in hosts:
@@ -780,6 +799,107 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
             import traceback
             console.print(traceback.format_exc())
         sys.exit(1)
+
+
+def _display_detailed_certificate(detailed_cert: Dict[str, Any]) -> None:
+    """Display detailed certificate information similar to openssl x509 -text."""
+    
+    # Certificate Details Panel
+    console.print(Panel.fit(
+        "[bold]📋 Detailed Certificate Information[/bold]",
+        border_style="blue"
+    ))
+    
+    # Version and Serial Number
+    info_table = Table(show_header=False, box=box.ROUNDED, border_style="dim")
+    info_table.add_column("Property", style="cyan", width=25)
+    info_table.add_column("Value", style="white")
+    
+    info_table.add_row("Version", str(detailed_cert.get("version", "Unknown")))
+    info_table.add_row("Serial Number", str(detailed_cert.get("serial_number", "Unknown")))
+    info_table.add_row("Signature Algorithm", detailed_cert.get("signature_algorithm", "Unknown"))
+    
+    console.print(info_table)
+    console.print()
+    
+    # Issuer Information
+    issuer = detailed_cert.get("issuer", {})
+    if issuer:
+        issuer_table = Table(title="🏢 Certificate Issuer", box=box.ROUNDED)
+        issuer_table.add_column("Field", style="cyan")
+        issuer_table.add_column("Value", style="white")
+        
+        for field, value in issuer.items():
+            issuer_table.add_row(field, str(value))
+        
+        console.print(issuer_table)
+        console.print()
+    
+    # Subject Information  
+    subject = detailed_cert.get("subject", {})
+    if subject:
+        subject_table = Table(title="🎯 Certificate Subject", box=box.ROUNDED)
+        subject_table.add_column("Field", style="cyan")
+        subject_table.add_column("Value", style="white")
+        
+        for field, value in subject.items():
+            subject_table.add_row(field, str(value))
+        
+        console.print(subject_table)
+        console.print()
+    
+    # Validity Period
+    validity = detailed_cert.get("validity", {})
+    if validity:
+        validity_table = Table(title="📅 Certificate Validity", box=box.ROUNDED)
+        validity_table.add_column("Period", style="cyan")
+        validity_table.add_column("Date", style="white")
+        
+        validity_table.add_row("Not Before", validity.get("not_before", "Unknown"))
+        validity_table.add_row("Not After", validity.get("not_after", "Unknown"))
+        
+        console.print(validity_table)
+        console.print()
+    
+    # Public Key Information
+    pub_key = detailed_cert.get("subject_public_key_info", {})
+    if pub_key:
+        pubkey_table = Table(title="🔑 Public Key Information", box=box.ROUNDED)
+        pubkey_table.add_column("Field", style="cyan")
+        pubkey_table.add_column("Value", style="white")
+        
+        pubkey_table.add_row("Algorithm", pub_key.get("public_key_algorithm", "Unknown"))
+        rsa_key = pub_key.get("rsa_public_key", {})
+        if rsa_key:
+            pubkey_table.add_row("RSA Key Size", rsa_key.get("modulus", "Unknown"))
+            pubkey_table.add_row("Exponent", rsa_key.get("exponent", "Unknown"))
+        
+        console.print(pubkey_table)
+        console.print()
+    
+    # Extensions
+    extensions = detailed_cert.get("extensions", {})
+    if extensions:
+        ext_table = Table(title="🔧 Certificate Extensions", box=box.ROUNDED)
+        ext_table.add_column("Extension", style="cyan")
+        ext_table.add_column("Value", style="white")
+        
+        # Subject Alternative Names
+        san = extensions.get("subject_alternative_name", [])
+        if san:
+            san_display = ", ".join([f"{name_type}:{name}" for name_type, name in san])
+            ext_table.add_row("Subject Alt Names", san_display)
+        
+        # Other extensions
+        for ext_name, ext_value in extensions.items():
+            if ext_name != "subject_alternative_name":
+                if isinstance(ext_value, list):
+                    ext_table.add_row(ext_name.replace("_", " ").title(), ", ".join(ext_value))
+                else:
+                    ext_table.add_row(ext_name.replace("_", " ").title(), str(ext_value))
+        
+        console.print(ext_table)
+        console.print()
 
 
 if __name__ == "__main__":

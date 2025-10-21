@@ -15,7 +15,7 @@ EZNet automatically performs the following tests:
 - **ICMP Ping**: Test basic connectivity (when possible)
 - **Port Range Scanning**: Scan multiple ports in a range (e.g., 80-90)
 - **Common Ports Scanning**: Scan 115+ frequently used ports
-- **SSL/TLS Certificate Analysis**: Comprehensive certificate security assessment
+- **SSL/TLS Certificate Analysis**: Comprehensive certificate security assessment with detailed certificate information display
 - **Rich Output**: Beautiful, colored terminal output
 - **JSON Export**: Machine-readable output format
 - **Async Operations**: Fast parallel testing
@@ -91,8 +91,14 @@ eznet example.com --common-ports --json
 # Analyze SSL certificate (automatically uses port 443)
 eznet github.com --ssl-check
 
+# Show detailed certificate information (similar to openssl x509 -text)
+eznet github.com --ssl-detail
+
 # Analyze SSL certificate with explicit port
 eznet github.com -p 443 --ssl-check
+
+# Detailed SSL analysis with specific port
+eznet api.example.com -p 8443 --ssl-detail
 
 # SSL analysis with verbose output
 eznet github.com --ssl-check --verbose
@@ -250,6 +256,7 @@ Options:
   -p, --port TEXT         Port number or range to test (e.g., "80", "80-90")
   --common-ports          Scan common ports (115+ ports)
   --ssl-check             Perform SSL/TLS certificate analysis
+  --ssl-detail            Show detailed SSL certificate information (like openssl x509 -text)
   -t, --timeout INTEGER   Timeout in seconds (default: 5)
   --json                  Output results in JSON format
   -v, --verbose           Enable verbose output
