@@ -26,7 +26,7 @@ EZNet automatically performs the following tests:
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/eznet.git
+git clone https://github.com/batr7434/eznet.git
 cd eznet
 pip install -e .
 ```
@@ -258,7 +258,7 @@ Options:
 ### Setup Development Environment
 
 ```bash
-git clone https://github.com/yourusername/eznet.git
+git clone https://github.com/batr7434/eznet.git
 cd eznet
 
 # Create virtual environment

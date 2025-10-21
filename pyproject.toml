@@ -9,10 +9,10 @@ description = "A comprehensive network testing CLI tool with port scanning and S
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-    {name = "EZNet Team", email = "contact@eznet.dev"}
+    {name = "EZNet Team", email = "batr7434@gmail.com"}
 ]
 maintainers = [
-    {name = "EZNet Team", email = "contact@eznet.dev"}
+    {name = "EZNet Team", email = "batr7434@gmail.com"}
 ]
 keywords = ["network", "testing", "cli", "ping", "tcp", "http", "dns", "ssl", "port-scanning", "security"]
 classifiers = [
