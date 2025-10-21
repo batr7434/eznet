@@ -150,11 +150,14 @@ class EZNetTUI(App):
         border: solid #30363d;
         height: 1;
         margin: 0 1;
+        width: 100%;
+        min-width: 20;
     }
     
     .k9s-command-input:focus {
         border: solid #58a6ff;
         background: #161b22;
+        color: #ffffff;
     }
     
     .k9s-filter {
@@ -333,10 +336,14 @@ class EZNetTUI(App):
         # Focus the command input initially (like k9s)
         command_input = self.query_one("#command-input", Input)
         command_input.placeholder = "Filter/Command..."
+        command_input.focus()
         
         # Initial check if we have hosts
         if self.hosts:
             self.call_after_refresh(self._check_all_hosts)
+        
+        # Start a timer to update the age display every second
+        self.set_interval(1.0, self._update_age_display)
     
     def _add_host_row(self, table: DataTable, host_result: HostResult) -> None:
         """Add a host row to the table (eznet-style with comprehensive info)."""
@@ -366,7 +373,7 @@ class EZNetTUI(App):
         # Response time
         response_time = f"{host_result.response_time:.1f}ms" if host_result.response_time > 0 else "-"
         
-        # Calculate age
+        # Calculate age (time since first check)
         age = "0s"
         if host_result.last_check:
             from datetime import datetime
@@ -377,6 +384,9 @@ class EZNetTUI(App):
                 age = f"{age_seconds // 60}m"
             else:
                 age = f"{age_seconds // 3600}h"
+        elif host_result.total_checks > 0:
+            # If we have checks but no last_check time, show something
+            age = "now"
         
         table.add_row(
             name,
@@ -428,6 +438,9 @@ class EZNetTUI(App):
                 age = f"{age_seconds // 60}m"
             else:
                 age = f"{age_seconds // 3600}h"
+        elif host_result.total_checks > 0:
+            # If we have checks but no last_check time, show something
+            age = "now"
         
         # Find the row and update it
         row_key = f"{host_result.host}:{host_result.port}"
@@ -453,10 +466,19 @@ class EZNetTUI(App):
         # Update status bar
         status_bar = self.query_one("#status-bar", Static)
         if host_count == 0:
-            status_bar.update("No hosts configured. Press : to add hosts.")
+            status_bar.update("No hosts configured. Type hostname in field above.")
         else:
             online_count = sum(1 for h in self.hosts.values() if h.status == "🟢 Online")
             status_bar.update(f"{online_count}/{host_count} hosts online")
+    
+    def _update_age_display(self) -> None:
+        """Update age display for all hosts every second."""
+        if not self.hosts:
+            return
+        
+        table = self.query_one("#hosts-table", DataTable)
+        for host_result in self.hosts.values():
+            self._update_host_row(table, host_result)
     
     async def _check_single_host_internal(self, host_key: str) -> None:
         """Internal method to check a single host and update its status."""
@@ -643,8 +665,10 @@ class EZNetTUI(App):
     def on_input_changed(self, event: Input.Changed) -> None:
         """Handle live input changes (like k9s filter)."""
         if event.input.id == "command-input":
+            # The input is automatically visible as the user types
             # In k9s, this would be used for filtering, but we use it for command preview
-            pass
+            current_value = event.value
+            # You can see the typing in real-time in the input field
     
 
     
