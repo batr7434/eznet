@@ -328,8 +328,12 @@ class EZNetTUI(App):
         # Status with color coding
         if host_result.status == "🟢 Online":
             status = "[green]✓ Online[/green]"
-        elif host_result.status == "� Offline":
+        elif host_result.status == "🔴 Offline":
             status = "[red]✗ Offline[/red]"
+        elif host_result.status == "🔴 Error":
+            status = "[red]✗ Error[/red]"
+        elif host_result.status == "🟡 Partial":
+            status = "[yellow]⚠ Partial[/yellow]"
         else:
             status = "[yellow]⧖ Testing[/yellow]"
         
@@ -375,8 +379,12 @@ class EZNetTUI(App):
         # Status with color coding
         if host_result.status == "🟢 Online":
             status = "[green]✓ Online[/green]"
-        elif host_result.status == "� Offline":
+        elif host_result.status == "🔴 Offline":
             status = "[red]✗ Offline[/red]"
+        elif host_result.status == "🔴 Error":
+            status = "[red]✗ Error[/red]"
+        elif host_result.status == "🟡 Partial":
+            status = "[yellow]⚠ Partial[/yellow]"
         else:
             status = "[yellow]⧖ Testing[/yellow]"
         
@@ -439,13 +447,13 @@ class EZNetTUI(App):
             return
         
         host_result = self.hosts[host_key]
-        host_result.status = "⏳ CHECKING"
+        host_result.status = "🟡 Testing"
+        
+        # Update table immediately to show testing status
+        table = self.query_one("#hosts-table", DataTable)
+        self._update_host_row(table, host_result)
         
         start_time = time.time()
-        
-        # Log the check
-        log = self.query_one("#main-log", Log)
-        log.write_line(f"🔍 Checking {host_result.host}:{host_result.port}")
         
         try:
             # Perform all checks concurrently
@@ -463,36 +471,32 @@ class EZNetTUI(App):
             dns_result, tcp_result, http_result, ssl_result, icmp_result = results
             
             # Update DNS status
-            if not isinstance(dns_result, Exception) and dns_result.get('success'):
-                host_result.dns_status = "✅"
-                host_result.dns_result = dns_result
+            if not isinstance(dns_result, Exception) and isinstance(dns_result, dict) and dns_result.get('success'):
+                host_result.dns_status = "🟢 OK"
             else:
-                host_result.dns_status = "❌"
+                host_result.dns_status = "🔴 Failed"
                 host_result.errors.append("DNS failed")
             
             # Update TCP status
-            if not isinstance(tcp_result, Exception) and tcp_result.get('success'):
-                host_result.tcp_status = "✅"
-                host_result.tcp_result = tcp_result
+            if not isinstance(tcp_result, Exception) and isinstance(tcp_result, dict) and tcp_result.get('success'):
+                host_result.tcp_status = "🟢 OK"
             else:
-                host_result.tcp_status = "❌"
+                host_result.tcp_status = "🔴 Failed"
                 host_result.errors.append("TCP failed")
             
             # Update HTTP status
-            if not isinstance(http_result, Exception) and http_result.get('success'):
-                host_result.http_status = "✅"
-                host_result.http_result = http_result
+            if not isinstance(http_result, Exception) and isinstance(http_result, dict) and http_result.get('success'):
+                host_result.http_status = "🟢 OK"
             else:
-                host_result.http_status = "❌"
+                host_result.http_status = "🔴 Failed"
                 host_result.errors.append("HTTP failed")
             
             # Update SSL status
-            if not isinstance(ssl_result, Exception) and ssl_result.get('success'):
-                host_result.ssl_status = "✅"
-                host_result.ssl_result = ssl_result
+            if not isinstance(ssl_result, Exception) and isinstance(ssl_result, dict) and ssl_result.get('success'):
+                host_result.ssl_status = "🟢 OK"
                 host_result.ssl_grade = ssl_result.get('security_grade', 'Unknown')
             else:
-                host_result.ssl_status = "❌"
+                host_result.ssl_status = "🔴 Failed"
                 host_result.errors.append("SSL failed")
             
             # Update ICMP result
@@ -500,13 +504,13 @@ class EZNetTUI(App):
                 host_result.icmp_result = icmp_result
             
             # Calculate overall status
-            if host_result.tcp_status == "✅" and host_result.http_status == "✅":
-                host_result.status = "✅ UP"
+            if host_result.tcp_status == "🟢 OK" and host_result.http_status == "🟢 OK":
+                host_result.status = "🟢 Online"
                 host_result.successful_checks += 1
-            elif host_result.tcp_status == "✅":
-                host_result.status = "⚠️ PARTIAL"
+            elif host_result.tcp_status == "🟢 OK":
+                host_result.status = "🟡 Partial"
             else:
-                host_result.status = "❌ DOWN"
+                host_result.status = "🔴 Offline"
             
             # Update timing and statistics
             host_result.response_time = int((time.time() - start_time) * 1000)
@@ -522,16 +526,18 @@ class EZNetTUI(App):
             self._update_host_row(table, host_result)
             self._update_context_bar()
             
-            # Log completion
-            log.write_line(f"✅ Completed check for {host_result.host} - {host_result.status} ({host_result.response_time}ms)")
+            # Completed successfully
             
         except Exception as e:
-            host_result.status = "❌ ERROR"
+            host_result.status = "🔴 Error"
             host_result.errors.append(str(e))
             host_result.last_check = datetime.now()
             host_result.total_checks += 1
             
-            log.write_line(f"❌ Error checking {host_result.host}: {str(e)}")
+            # Update table even on error
+            table = self.query_one("#hosts-table", DataTable)
+            self._update_host_row(table, host_result)
+            self._update_context_bar()
     
     async def _check_single_host(self, host_key: str) -> None:
         """Check a single host and update its status."""
@@ -610,7 +616,7 @@ class EZNetTUI(App):
         
         # Update filter bar to show command input
         filter_bar = self.query_one("#filter-bar", Static)
-        filter_bar.update(self.command_buffer + "_")
+        filter_bar.update(self.command_buffer)
     
     def on_key(self, event) -> None:
         """Handle key events for k9s-style command input."""
@@ -627,16 +633,16 @@ class EZNetTUI(App):
                 # Handle backspace
                 if len(self.command_buffer) > 1:
                     self.command_buffer = self.command_buffer[:-1]
+                    filter_bar = self.query_one("#filter-bar", Static)
+                    filter_bar.update(self.command_buffer)
                 else:
                     self._exit_command_mode()
                     return
-                filter_bar = self.query_one("#filter-bar", Static)
-                filter_bar.update(self.command_buffer + "_")
             elif event.character and event.character.isprintable():
                 # Add character to buffer
                 self.command_buffer += event.character
                 filter_bar = self.query_one("#filter-bar", Static)
-                filter_bar.update(self.command_buffer + "_")
+                filter_bar.update(self.command_buffer)
         else:
             # Normal key handling - let the bindings work
             pass

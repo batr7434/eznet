@@ -17,7 +17,6 @@ A comprehensive network testing CLI tool with both command-line and interactive 
 - **SSL/TLS Certificate Analysis**: Comprehensive certificate security assessment
 
 ### Interactive TUI (Terminal User Interface)
-- **k9s-Style Interface**: Familiar navigation for Kubernetes users
 - **Real-time Monitoring**: Live network status updates
 - **Direct Command Input**: Type `:hostname` to add hosts (like k9s)
 - **Comprehensive Dashboard**: DNS, TCP, HTTP, SSL status at a glance
