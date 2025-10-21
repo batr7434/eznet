@@ -29,8 +29,7 @@ from .utils import format_duration, is_valid_ip, is_valid_hostname, parse_ports,
 
 console = Console()
 
-# Global flag for SSL detail display
-_ssl_detail_mode = False
+# SSL detailed mode is now always enabled when --ssl-check is used
 
 
 class EZNetResult:
@@ -127,8 +126,7 @@ async def run_port_scan(host: str, ports: list, timeout: int, ssl_check: bool, m
             
             # Add SSL check for HTTPS ports
             if ssl_check and port in [443, 8443, 993, 995, 465, 587, 636]:
-                global _ssl_detail_mode
-                tasks.append(ssl_checker.check(host, port, detailed=_ssl_detail_mode))
+                tasks.append(ssl_checker.check(host, port, detailed=True))
             
             return await asyncio.gather(*tasks, return_exceptions=True)
     
@@ -467,8 +465,7 @@ async def run_all_checks(host: str, port: Optional[int], timeout: int, ssl_check
         
         # Add SSL check for HTTPS ports
         if ssl_check and port in [443, 8443, 993, 995, 465, 587, 636]:
-            global _ssl_detail_mode
-            tasks.append(ssl_checker.check(host, port, detailed=_ssl_detail_mode))
+            tasks.append(ssl_checker.check(host, port, detailed=True))
     
     # Execute all tasks
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -626,9 +623,8 @@ def display_results(result: EZNetResult) -> None:
             
             console.print(ssl_table)
             
-            # Show detailed certificate information if requested
-            global _ssl_detail_mode
-            if _ssl_detail_mode and ssl_data.get("detailed_certificate"):
+            # Show detailed certificate information (always enabled with --ssl-check)
+            if ssl_data.get("detailed_certificate"):
                 console.print()
                 _display_detailed_certificate(ssl_data["detailed_certificate"])
             
@@ -665,14 +661,13 @@ def display_results(result: EZNetResult) -> None:
 @click.option("--hosts-file", type=click.Path(exists=True), help="File containing list of hosts (one per line)")
 @click.option("--port", "-p", help="Port number to test (can be single port, range like 80-90, or comma-separated)")
 @click.option("--common-ports", is_flag=True, help="Scan common ports (top 100)")
-@click.option("--ssl-check", is_flag=True, help="Perform SSL/TLS certificate analysis (for HTTPS ports)")
-@click.option("--ssl-detail", is_flag=True, help="Show detailed SSL certificate information (like openssl x509 -text)")
+@click.option("--ssl-check", is_flag=True, help="Perform comprehensive SSL/TLS certificate analysis with detailed information")
 @click.option("--timeout", "-t", default=5, help="Timeout in seconds (default: 5)")
 @click.option("--json", "output_json", is_flag=True, help="Output results in JSON format")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
 @click.option("--max-concurrent", default=50, help="Maximum concurrent connections (default: 50)")
 @click.version_option(version="0.2.0", prog_name="eznet")
-def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, ssl_detail: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int) -> None:
+def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], common_ports: bool, ssl_check: bool, timeout: int, output_json: bool, verbose: bool, max_concurrent: int) -> None:
     """
     EZNet - Comprehensive network testing tool.
     
@@ -732,22 +727,16 @@ def main(host: Optional[str], hosts_file: Optional[str], port: Optional[str], co
         ports = get_common_ports()
         if verbose:
             console.print(f"[dim]Scanning {len(ports)} common ports[/dim]")
-    elif ssl_check or ssl_detail:
-        # If --ssl-check or --ssl-detail is specified without port, default to 443
+    elif ssl_check:
+        # If --ssl-check is specified without port, default to 443
         ports = [443]
         if verbose:
-            console.print(f"[dim]Using default HTTPS port 443 for SSL {'detailed ' if ssl_detail else ''}check[/dim]")
+            console.print(f"[dim]Using default HTTPS port 443 for SSL check[/dim]")
     
     # Validate port count
     if len(ports) > 1000:
         console.print("[red]Error: Too many ports specified (max 1000)[/red]")
         sys.exit(1)
-    
-    # Auto-enable ssl_check if ssl_detail is requested
-    if ssl_detail:
-        ssl_check = True
-        global _ssl_detail_mode
-        _ssl_detail_mode = True
     
     # Validate hosts
     for h in hosts:
